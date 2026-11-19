@@ -28,12 +28,19 @@ Dashboard operasional lokal untuk melacak siklus registrasi, jarak antar-log (pa
    - Peringkat kepatuhan SLA ≤ 3 hari per verifikator (`Message_by`) dengan drilldown 100 aktivitas terakhir.
    - Database lokal **SQLite** (`node:sqlite` bawaan Node.js v24) dengan fitur **Impor Excel baru (.xlsx)** langsung dari UI serta **Ekspor laporan (.xlsx)**.
 
-## Arsitektur & Stack
+## Mode Berjalan (GitHub Pages vs Lokal SQLite)
 
-- **Frontend:** React 19, Vite 6, TypeScript, Tailwind CSS v4, Radix UI (`shadcn/ui` patterns), Lucide React, Recharts, TanStack Table v8.
-- **Backend & Penyimpanan Lokal:** Node.js v24 (`node:sqlite` bawaan tanpa instalasi DB eksternal), Express 5, Multer, SheetJS (`xlsx`).
+Dashboard mendukung **2 mode otomatis** tanpa konfigurasi tambahan:
 
-## Cara Menjalankan di Lokal
+1. **Mode Browser-Only (GitHub Pages / Web Statis)**
+   - Berjalan 100% di browser menggunakan **IndexedDB** lokal dan **SheetJS** (*client-side*).
+   - Tidak ada data rekanan atau file Excel yang disimpan di repositori GitHub maupun dikirim ke server eksternal.
+   - Saat pertama kali membuka URL GitHub Pages, cukup pilih file `history_registrasi_rekanan*.xlsx` dari komputer Anda—data otomatis diolah dan tersimpan di browser.
+
+2. **Mode Server + SQLite Lokal (`npm run dev` / `npm run server`)**
+   - Menggunakan Node.js v24 (`node:sqlite` bawaan tanpa instalasi DB eksternal), Express 5, Multer, dan SheetJS (`xlsx`).
+
+## Cara Menjalankan di Lokal (Opsional)
 
 ### 1. Instalasi dependensi
 ```bash

@@ -20,7 +20,7 @@ import {
   X,
   ExternalLink,
 } from 'lucide-react';
-import { api, type GlobalFilters, type LogRow } from '@/lib/api';
+import { api, getRuntimeMode, type GlobalFilters, type LogRow } from '@/lib/api';
 import { formatBytes, formatDaysSmart, formatDecimal, formatNumber, formatPercent } from '@/lib/format';
 import {
   Badge,
@@ -127,9 +127,19 @@ export function VerifierDataPage({
                 <Database className="size-4" />
               </div>
               <div>
-                <CardTitle>Status Database SQLite Lokal</CardTitle>
+                <CardTitle>
+                  {getRuntimeMode() === 'server'
+                    ? 'Status Database SQLite Lokal'
+                    : 'Status Penyimpanan Browser (IndexedDB)'}
+                </CardTitle>
                 <CardDescription>
-                  Tersimpan aman dalam satu file lokal <code className="font-mono-data">data/sla_rekanan.db</code>
+                  {getRuntimeMode() === 'server' ? (
+                    <>
+                      Tersimpan aman dalam satu file lokal <code className="font-mono-data">data/sla_rekanan.db</code>
+                    </>
+                  ) : (
+                    '100% tersimpan lokal di IndexedDB browser Anda — tanpa pengiriman data ke server'
+                  )}
                 </CardDescription>
               </div>
             </div>
@@ -172,13 +182,32 @@ export function VerifierDataPage({
                 <span className="font-mono-data font-medium">{formatNumber(Number(datasetMeta.vendors2024Excluded || 0))} rekanan</span>
               </div>
             </div>
-            <a
-              href={api.exportVendorsUrl(filters)}
-              className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              <Download className="size-3.5" />
-              Unduh Laporan Siklus Rekanan (.xlsx)
-            </a>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => api.downloadVendorsExcel(filters)}
+                disabled={Number(datasetMeta.cleanVendors || 0) === 0}
+                className="flex-1"
+              >
+                <Download className="size-3.5" />
+                Unduh Laporan Siklus Rekanan (.xlsx)
+              </Button>
+              {getRuntimeMode() === 'browser' && Number(datasetMeta.cleanVendors || 0) > 0 && (
+                <Button
+                  variant="ghost"
+                  size="md"
+                  onClick={async () => {
+                    await api.clearBrowserData();
+                    onDatasetUpdated();
+                    load();
+                  }}
+                  title="Hapus cache data dari IndexedDB browser"
+                >
+                  Hapus Cache
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
 

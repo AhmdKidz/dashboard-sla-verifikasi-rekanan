@@ -147,13 +147,14 @@ export function VendorDrawer({
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {data && (
-                <a
-                  href={api.exportVendorDetailUrl(data.vendor.id_vendor)}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => api.downloadVendorDetailExcel(data.vendor.id_vendor)}
                 >
                   <Download className="size-3.5" />
                   <span className="hidden sm:inline">Ekspor Log (.xlsx)</span>
-                </a>
+                </Button>
               )}
               <Dialog.Close asChild>
                 <Button variant="ghost" size="icon" aria-label="Tutup panel detail rekanan">

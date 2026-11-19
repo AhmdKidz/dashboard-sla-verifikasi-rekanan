@@ -1,3 +1,19 @@
+import {
+  browserExportVendorDetailExcel,
+  browserExportVendorsExcel,
+  browserGetAnalytics,
+  browserGetDivisionsRevisions,
+  browserGetLeaderboard,
+  browserGetMeta,
+  browserGetOverview,
+  browserGetVendorDetail,
+  browserGetVendors,
+  browserGetVerifierLogs,
+  browserGetVerifiers,
+  clearBrowserDataset,
+  importExcelInBrowser,
+} from '@/lib/browserStore';
+
 export interface GlobalFilters {
   tipe: 'ALL' | 'Badan Usaha' | 'Mandor';
   divisi: string;
@@ -71,6 +87,45 @@ export interface LogRow {
   cumulative_days: number;
 }
 
+export type RuntimeMode = 'server' | 'browser';
+
+let detectedModePromise: Promise<RuntimeMode> | null = null;
+let resolvedMode: RuntimeMode = 'browser';
+
+export function getRuntimeMode(): RuntimeMode {
+  return resolvedMode;
+}
+
+async function ensureMode(): Promise<RuntimeMode> {
+  if (!detectedModePromise) {
+    detectedModePromise = (async () => {
+      if (
+        import.meta.env.VITE_STATIC_MODE === 'true' ||
+        (typeof window !== 'undefined' && window.location.hostname.endsWith('github.io'))
+      ) {
+        resolvedMode = 'browser';
+        return 'browser';
+      }
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 900);
+        const res = await fetch('/api/meta', { signal: controller.signal });
+        clearTimeout(timer);
+        const ct = res.headers.get('content-type') || '';
+        if (res.ok && ct.includes('application/json')) {
+          resolvedMode = 'server';
+          return 'server';
+        }
+      } catch {
+        // Static / GitHub Pages environment without local Node backend
+      }
+      resolvedMode = 'browser';
+      return 'browser';
+    })();
+  }
+  return detectedModePromise;
+}
+
 function toParams(obj: Record<string, string | number | boolean | undefined>) {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(obj)) {
@@ -95,19 +150,29 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getMeta: () =>
-    fetchJson<{
+  detectMode: ensureMode,
+
+  getMeta: async () => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetMeta();
+    return fetchJson<{
       meta: Record<string, string>;
       dbSizeBytes: number;
       divisiList: { divisi: string; count: number }[];
       bidangList: string[];
-    }>('/api/meta'),
+    }>('/api/meta');
+  },
 
-  getOverview: (filters: GlobalFilters) =>
-    fetchJson<any>(`/api/overview?${toParams(filters as any)}`),
+  getOverview: async (filters: GlobalFilters) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetOverview(filters);
+    return fetchJson<any>(`/api/overview?${toParams(filters as any)}`);
+  },
 
-  getLeaderboard: (params: { limit?: number; includeInProgress?: boolean; divisi?: string }) =>
-    fetchJson<{
+  getLeaderboard: async (params: { limit?: number; includeInProgress?: boolean; divisi?: string }) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetLeaderboard(params);
+    return fetchJson<{
       limit: number;
       includeInProgressSlow: boolean;
       buStats: { total: number; lulus: number; avgPassDays: number | null; avgAllDays: number | null };
@@ -116,9 +181,10 @@ export const api = {
       buSlowest: VendorRow[];
       mandorFastest: VendorRow[];
       mandorSlowest: VendorRow[];
-    }>(`/api/leaderboard?${toParams(params)}`),
+    }>(`/api/leaderboard?${toParams(params)}`);
+  },
 
-  getVendors: (params: {
+  getVendors: async (params: {
     page?: number;
     pageSize?: number;
     search?: string;
@@ -128,17 +194,22 @@ export const api = {
     revisionBand?: string;
     sortBy?: string;
     sortDir?: 'asc' | 'desc';
-  }) =>
-    fetchJson<{
+  }) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetVendors(params);
+    return fetchJson<{
       items: VendorRow[];
       total: number;
       page: number;
       pageSize: number;
       totalPages: number;
-    }>(`/api/vendors?${toParams(params)}`),
+    }>(`/api/vendors?${toParams(params)}`);
+  },
 
-  getVendorDetail: (idVendor: number) =>
-    fetchJson<{
+  getVendorDetail: async (idVendor: number) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetVendorDetail(idVendor);
+    return fetchJson<{
       vendor: VendorRow;
       logs: LogRow[];
       bidangBreakdown: {
@@ -166,21 +237,38 @@ export const api = {
           waktu: string;
         } | null;
       };
-    }>(`/api/vendors/${idVendor}`),
+    }>(`/api/vendors/${idVendor}`);
+  },
 
-  getAnalytics: (filters: GlobalFilters) =>
-    fetchJson<any>(`/api/analytics?${toParams(filters as any)}`),
+  getAnalytics: async (filters: GlobalFilters) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetAnalytics(filters);
+    return fetchJson<any>(`/api/analytics?${toParams(filters as any)}`);
+  },
 
-  getDivisionsRevisions: (filters: GlobalFilters) =>
-    fetchJson<any>(`/api/divisions-revisions?${toParams(filters as any)}`),
+  getDivisionsRevisions: async (filters: GlobalFilters) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetDivisionsRevisions(filters);
+    return fetchJson<any>(`/api/divisions-revisions?${toParams(filters as any)}`);
+  },
 
-  getVerifiers: (params: GlobalFilters & { minLogs?: number; bidang?: string }) =>
-    fetchJson<{ items: any[] }>(`/api/verifiers?${toParams(params as any)}`),
+  getVerifiers: async (params: GlobalFilters & { minLogs?: number; bidang?: string }) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetVerifiers(params);
+    return fetchJson<{ items: any[] }>(`/api/verifiers?${toParams(params as any)}`);
+  },
 
-  getVerifierLogs: (verifierId: string) =>
-    fetchJson<{ verifierId: string; logs: LogRow[] }>(`/api/verifiers/${encodeURIComponent(verifierId)}/logs`),
+  getVerifierLogs: async (verifierId: string) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetVerifierLogs(verifierId);
+    return fetchJson<{ verifierId: string; logs: LogRow[] }>(
+      `/api/verifiers/${encodeURIComponent(verifierId)}/logs`
+    );
+  },
 
   importExcel: async (file: File, options: { exclude2024: boolean; excludeDummies: boolean }) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return importExcelInBrowser(file, options);
     const fd = new FormData();
     fd.append('file', file);
     fd.append('exclude2024', String(options.exclude2024));
@@ -191,6 +279,25 @@ export const api = {
     });
   },
 
-  exportVendorsUrl: (filters: GlobalFilters) => `/api/export/vendors?${toParams(filters as any)}`,
-  exportVendorDetailUrl: (idVendor: number) => `/api/export/vendors/${idVendor}`,
+  clearBrowserData: async () => {
+    await clearBrowserDataset();
+  },
+
+  downloadVendorsExcel: async (filters: GlobalFilters) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') {
+      await browserExportVendorsExcel(filters);
+      return;
+    }
+    window.location.href = `/api/export/vendors?${toParams(filters as any)}`;
+  },
+
+  downloadVendorDetailExcel: async (idVendor: number) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') {
+      await browserExportVendorDetailExcel(idVendor);
+      return;
+    }
+    window.location.href = `/api/export/vendors/${idVendor}`;
+  },
 };

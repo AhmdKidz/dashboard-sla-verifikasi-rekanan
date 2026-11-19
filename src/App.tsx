@@ -78,7 +78,7 @@ export function App() {
         onToggleDarkMode={() => setDarkMode((d) => !d)}
       >
         {isEmptyDb ? (
-          <EmptyDatabaseState onGoToImport={() => setActivePage('verifiers')} />
+          <EmptyDatabaseState onImported={loadMeta} onGoToImport={() => setActivePage('verifiers')} />
         ) : (
           <>
             {activePage === 'overview' && (

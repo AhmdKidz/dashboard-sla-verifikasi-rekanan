@@ -13,7 +13,7 @@ import {
   X,
   RotateCcw,
 } from 'lucide-react';
-import { api, type GlobalFilters } from '@/lib/api';
+import { api, getRuntimeMode, type GlobalFilters } from '@/lib/api';
 import { Button, FilterSelect } from '@/components/ui/primitives';
 import { cn } from '@/lib/utils';
 
@@ -61,7 +61,7 @@ export function Layout({
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white p-1.5">
             <img
-              src="/logo-hk.png"
+              src="./logo-hk.png"
               alt="Logo Hutama Karya"
               className="max-h-full max-w-full object-contain"
               onError={(e) => {
@@ -128,7 +128,9 @@ export function Layout({
       <div className="border-t border-white/10 p-3.5 text-[11px] text-slate-300">
         <div className="rounded-lg bg-white/7 px-3 py-2.5 space-y-1">
           <div className="flex items-center justify-between">
-            <span className="font-medium text-white">SQLite Lokal Aktif</span>
+            <span className="font-medium text-white">
+              {getRuntimeMode() === 'server' ? 'SQLite Lokal Aktif' : 'IndexedDB Browser Aktif'}
+            </span>
             <span className="inline-flex size-2 rounded-full bg-emerald-400" />
           </div>
           <div className="font-mono-data text-slate-300">
@@ -233,14 +235,17 @@ export function Layout({
                 </>
               )}
 
-              <a
-                href={api.exportVendorsUrl(filters)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => api.downloadVendorsExcel(filters)}
+                disabled={Number(datasetMeta.cleanVendors || 0) === 0}
                 title="Ekspor data siklus rekanan sesuai filter ke Excel (.xlsx)"
+                className="h-9"
               >
                 <Download className="size-3.5" />
                 <span className="hidden sm:inline">Ekspor .xlsx</span>
-              </a>
+              </Button>
 
               <Button
                 variant="outline"

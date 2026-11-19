@@ -1,5 +1,8 @@
-import { AlertTriangle, RotateCcw, SearchX, Database } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertTriangle, RotateCcw, SearchX, Database, Upload, ShieldCheck } from 'lucide-react';
+import { api } from '@/lib/api';
 import { Button, Card, CardContent, Skeleton } from '@/components/ui/primitives';
+import { cn } from '@/lib/utils';
 
 export function ErrorState({
   title = 'Gagal memuat data dashboard',
@@ -59,22 +62,105 @@ export function EmptyFilterState({
   );
 }
 
-export function EmptyDatabaseState({ onGoToImport }: { onGoToImport: () => void }) {
+export function EmptyDatabaseState({
+  onImported,
+  onGoToImport,
+}: {
+  onImported?: () => void;
+  onGoToImport: () => void;
+}) {
+  const [importing, setImporting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [exclude2024, setExclude2024] = useState(true);
+  const [excludeDummies, setExcludeDummies] = useState(true);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setErrorMsg(null);
+    try {
+      await api.importExcel(file, { exclude2024, excludeDummies });
+      onImported?.();
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Gagal membaca file Excel.');
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center dark:border-slate-700 dark:bg-slate-900">
-      <div className="flex size-12 items-center justify-center rounded-xl bg-[#0F2744]/10 text-[#0F2744] dark:bg-sky-900/40 dark:text-sky-300">
+    <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 text-center sm:p-10 dark:border-slate-800 dark:bg-slate-900">
+      <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-[#0F2744]/10 text-[#0F2744] dark:bg-sky-900/40 dark:text-sky-300">
         <Database className="size-6" />
       </div>
-      <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-slate-100">
-        Database Lokal Belum Berisi Data Log
+      <h3 className="mt-4 text-lg font-bold text-slate-900 dark:text-slate-100">
+        Muat Data History Registrasi Rekanan (.xlsx)
       </h3>
-      <p className="mt-1 max-w-md text-xs text-slate-500 text-pretty dark:text-slate-400">
-        Unggah file Excel history registrasi rekanan (.xlsx) untuk mulai melacak SLA verifikator, revisi rekanan, dan
-        durasi siklus Badan Usaha maupun Mandor.
+      <p className="mx-auto mt-1.5 max-w-lg text-xs text-slate-500 text-pretty dark:text-slate-400">
+        Pilih file <code className="font-mono-data">history_registrasi_rekanan*.xlsx</code> dari komputer Anda untuk
+        langsung menampilkan seluruh KPI, Top 10 Tercepat/Terlama, analisa bidang, dan pelacak jarak antar-log.
       </p>
-      <Button variant="primary" size="md" className="mt-5" onClick={onGoToImport}>
-        Impor File Excel Sekarang
-      </Button>
+
+      <div className="mt-5 flex flex-wrap justify-center gap-4 text-xs text-slate-700 dark:text-slate-300">
+        <label className="inline-flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={exclude2024}
+            onChange={(e) => setExclude2024(e.target.checked)}
+            className="size-3.5 rounded accent-[#0F2744]"
+          />
+          Khusus rekanan 2025+ (standar SLA)
+        </label>
+        <label className="inline-flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={excludeDummies}
+            onChange={(e) => setExcludeDummies(e.target.checked)}
+            className="size-3.5 rounded accent-[#0F2744]"
+          />
+          Bersihkan 18 ID Dummy / Testing
+        </label>
+      </div>
+
+      <label
+        className={cn(
+          'mt-5 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/70 px-6 py-8 transition-colors cursor-pointer hover:border-[#0F2744] hover:bg-slate-100/70 dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-sky-500',
+          importing && 'pointer-events-none opacity-60'
+        )}
+      >
+        <Upload className="size-7 text-[#0F2744] dark:text-sky-400" />
+        <span className="mt-2.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
+          {importing
+            ? 'Sedang memproses & menyimpan ke IndexedDB browser...'
+            : 'Klik untuk memilih file Excel (.xlsx)'}
+        </span>
+        <span className="mt-1 text-[11px] text-slate-500">
+          Data tersimpan permanen di IndexedDB browser sehingga tidak perlu unggah ulang saat refresh
+        </span>
+        <input type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" disabled={importing} />
+      </label>
+
+      {errorMsg && (
+        <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+          {errorMsg}
+        </p>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        <span className="inline-flex items-center gap-1.5 text-teal-700 dark:text-teal-400">
+          <ShieldCheck className="size-4 shrink-0" />
+          100% Lokal di Browser — file Excel Anda tidak pernah diunggah ke server eksternal.
+        </span>
+        <button
+          type="button"
+          onClick={onGoToImport}
+          className="font-medium text-slate-600 hover:underline cursor-pointer dark:text-slate-300"
+        >
+          Pengaturan Impor Lengkap →
+        </button>
+      </div>
     </div>
   );
 }
