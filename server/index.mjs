@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDb, getMeta, replaceDatabaseContents, DB_PATH } from './db.mjs';
 import { parseRegistrationWorkbook } from './parser.mjs';
-import { computeFinalApprovalDiagnostic } from '../shared/slaParser.mjs';
+import { computeFinalApprovalDiagnostic, computeFgdDefenseData } from '../shared/slaParser.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.resolve(__dirname, '..', 'uploads');
@@ -708,6 +708,28 @@ app.get('/api/analytics', (req, res) => {
     activitySummary,
     finalApprovalDiagnostic,
   });
+});
+
+// 6b. FGD Defense & Q&A Evidence Pack (Answers tough questions from 3-Slide FGD PPT)
+app.get('/api/fgd-defense', (req, res) => {
+  const db = getDb();
+  const vf = buildFilterWhere(req.query, 'vendors');
+  const lf = buildFilterWhere(req.query, 'logs');
+  const meta = getMeta(db);
+
+  const vendors = db.prepare(`SELECT * FROM vendors ${vf.where}`).all(...vf.params);
+  const logs = db
+    .prepare(`
+      SELECT
+        id_vendor, nama_perusahaan, tipe_rekanan, divisi, status, hasil_status,
+        message_by, serial_date, waktu_iso, waktu_display, periode_bulan, kelompok_waktu,
+        tipe_activity, bidang, sla_hours, sla_days, kategori_aktor, paired_prev_act
+      FROM logs
+      ${lf.where}
+    `)
+    .all(...lf.params);
+
+  res.json(computeFgdDefenseData(vendors, logs, meta));
 });
 
 // 7. Division, Revision Friction & Aging Queue Analysis (New Deep Insights!)

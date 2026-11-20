@@ -3,6 +3,7 @@ import {
   browserExportVendorsExcel,
   browserGetAnalytics,
   browserGetDivisionsRevisions,
+  browserGetFgdDefense,
   browserGetLeaderboard,
   browserGetMeta,
   browserGetOverview,
@@ -244,6 +245,12 @@ export const api = {
     const mode = await ensureMode();
     if (mode === 'browser') return browserGetAnalytics(filters);
     return fetchJson<any>(`/api/analytics?${toParams(filters as any)}`);
+  },
+
+  getFgdDefense: async (filters: GlobalFilters) => {
+    const mode = await ensureMode();
+    if (mode === 'browser') return browserGetFgdDefense(filters);
+    return fetchJson<any>(`/api/fgd-defense?${toParams(filters as any)}`);
   },
 
   getDivisionsRevisions: async (filters: GlobalFilters) => {

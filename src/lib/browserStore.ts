@@ -1,5 +1,9 @@
 import * as XLSX from 'xlsx';
-import { computeFinalApprovalDiagnostic, parseRegistrationWorkbookObject } from '../../shared/slaParser.mjs';
+import {
+  computeFgdDefenseData,
+  computeFinalApprovalDiagnostic,
+  parseRegistrationWorkbookObject,
+} from '../../shared/slaParser.mjs';
 import type { GlobalFilters, LogRow, VendorRow } from '@/lib/api';
 
 const IDB_NAME = 'sla-verifikasi-local-db';
@@ -977,6 +981,13 @@ export async function browserGetAnalytics(filters: GlobalFilters) {
     activitySummary,
     finalApprovalDiagnostic,
   };
+}
+
+export async function browserGetFgdDefense(filters: GlobalFilters) {
+  const ds = await ensureDataset();
+  const vList = filterVendors(ds.vendors, filters);
+  const lList = filterLogs(ds.logs, filters);
+  return computeFgdDefenseData(vList, lList, ds.meta);
 }
 
 export async function browserGetDivisionsRevisions(filters: GlobalFilters) {

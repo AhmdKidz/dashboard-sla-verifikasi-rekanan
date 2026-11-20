@@ -29,3 +29,5 @@ export function parseRegistrationWorkbookObject(
 ): ParsedWorkbookResult;
 
 export function computeFinalApprovalDiagnostic(faLogs: any[]): any;
+
+export function computeFgdDefenseData(vendors: any[], logs: any[], meta?: Record<string, string>): any;

@@ -597,3 +597,303 @@ export function computeFinalApprovalDiagnostic(faLogs) {
     topOutliersOct,
   };
 }
+
+/**
+ * Compute all dynamic evidence datasets answering critical FGD Q&A questions
+ * across Slides 1, 2, and 3 (data audit waterfall, BU vs Mandor split, 1784 vs 1767 reconciliation,
+ * CQSMS timeline, Mean vs Median/P90 distribution, Internal Review breakdown,
+ * Parallel vs Calendar comparison for extreme cases, and interactive Auto-Drop simulator).
+ */
+export function computeFgdDefenseData(vendors, logs, meta = {}) {
+  const vList = vendors || [];
+  const lList = logs || [];
+
+  // 1. Data Curation Waterfall (104.227 -> 63.722)
+  const rawRows = Number(meta.rawRows || lList.length);
+  const rows2024 = Number(meta.rows2024Excluded || 0);
+  const vendors2024 = Number(meta.vendors2024Excluded || 0);
+  const dummyRows = Number(meta.dummyRowsRemoved || 0);
+  const dummyIds = Number(meta.dummyIdsRemoved || 0);
+  const dupRows = Number(meta.duplicatesRemoved || 0);
+  const cleanLogsCount = Number(meta.cleanLogs || lList.length);
+
+  const curationWaterfall = [
+    { step: 'Data Mentah Excel', rows: rawRows, note: 'Total baris file history registrasi', tone: 'neutral' },
+    { step: 'Filter Mulai 2024', rows: -rows2024, note: `${vendors2024} rekanan registrasi < Jan 2025`, tone: 'amber' },
+    { step: 'ID Dummy / Test', rows: -dummyRows, note: `${dummyIds} ID akun uji coba internal`, tone: 'rose' },
+    { step: 'Duplikat Menit', rows: -dupRows, note: 'Log ganda pada menit, aktivitas & status sama', tone: 'cobalt' },
+    { step: 'Data Bersih 2025+', rows: cleanLogsCount, note: `${vList.length} rekanan unik aktif dianalisis`, tone: 'emerald' },
+  ];
+
+  // 2. Badan Usaha vs Mandor Status Deconstruction (explaining 37.5% vs 54.3% & 1.311 vs 1.173)
+  const buildTypeSplit = (tipe) => {
+    const sub = vList.filter((v) => v.tipe_rekanan === tipe);
+    const lulus = sub.filter((v) => v.tindak_lanjut === 'Lulus Terseleksi').length;
+    const antreanVerif = sub.filter((v) => v.tindak_lanjut === 'Antrean di Verifikator').length;
+    const revisiRekanan = sub.filter((v) => v.tindak_lanjut === 'Revisi di Rekanan').length;
+    return {
+      tipe,
+      total: sub.length,
+      lulus,
+      antreanVerif,
+      revisiRekanan,
+      lulusRate: sub.length ? lulus / sub.length : 0,
+      antreanRate: sub.length ? antreanVerif / sub.length : 0,
+      revisiRate: sub.length ? revisiRekanan / sub.length : 0,
+    };
+  };
+  const typeSplit = [buildTypeSplit('Badan Usaha'), buildTypeSplit('Mandor')];
+
+  const mandorQueueMap = new Map();
+  for (const v of vList) {
+    if (v.tipe_rekanan === 'Mandor' && v.tindak_lanjut === 'Antrean di Verifikator') {
+      mandorQueueMap.set(v.last_act, (mandorQueueMap.get(v.last_act) || 0) + 1);
+    }
+  }
+  const mandorQueueBreakdown = [...mandorQueueMap.entries()]
+    .map(([lastAct, count]) => ({ lastAct, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // 3. Reconciliation: Final Approval Logs (1.784) vs Unique Approved Vendors (1.767)
+  const vendorById = new Map(vList.map((v) => [v.id_vendor, v]));
+  const faPerVendor = new Map();
+  let totalFaLogs = 0;
+  for (const l of lList) {
+    if (l.tipe_activity === 'Approve Rekanan Terseleksi') {
+      totalFaLogs++;
+      faPerVendor.set(l.id_vendor, (faPerVendor.get(l.id_vendor) || 0) + 1);
+    }
+  }
+  const uniqueVendorsEverApproved = faPerVendor.size;
+  let multiApprovedVendorsCount = 0;
+  let extraReapprovalLogs = 0;
+  const reapprovedExamples = [];
+  const revertedAfterApproved = [];
+
+  for (const [idV, cnt] of faPerVendor.entries()) {
+    const v = vendorById.get(idV);
+    if (cnt > 1) {
+      multiApprovedVendorsCount++;
+      extraReapprovalLogs += cnt - 1;
+      if (v) {
+        reapprovedExamples.push({
+          idVendor: idV,
+          namaPerusahaan: v.nama_perusahaan,
+          faCount: cnt,
+          tindakLanjut: v.tindak_lanjut,
+          lastAct: v.last_act,
+        });
+      }
+    }
+    if (v && v.tindak_lanjut !== 'Lulus Terseleksi') {
+      revertedAfterApproved.push({
+        idVendor: idV,
+        namaPerusahaan: v.nama_perusahaan,
+        faCount: cnt,
+        tindakLanjut: v.tindak_lanjut,
+        lastAct: v.last_act,
+      });
+    }
+  }
+  reapprovedExamples.sort((a, b) => b.faCount - a.faCount);
+
+  const faReconciliation = {
+    totalFaLogs,
+    uniqueVendorsEverApproved,
+    currentLulusVendors: vList.filter((v) => v.tindak_lanjut === 'Lulus Terseleksi').length,
+    multiApprovedVendorsCount,
+    extraReapprovalLogs,
+    revertedCount: revertedAfterApproved.length,
+    reapprovedExamples: reapprovedExamples.slice(0, 6),
+    revertedAfterApproved,
+  };
+
+  // 4. CQSMS/QHSSE Monthly Timeline (explaining why Okt+ n=0)
+  const cqsmsMap = new Map();
+  let cqsmsLastDate = '';
+  for (const l of lList) {
+    if (l.bidang !== 'CQSMS/QHSSE') continue;
+    if (!cqsmsMap.has(l.periode_bulan)) {
+      cqsmsMap.set(l.periode_bulan, { bulan: l.periode_bulan, totalLogs: 0, verifLogs: 0 });
+    }
+    const row = cqsmsMap.get(l.periode_bulan);
+    row.totalLogs++;
+    if (l.kategori_aktor === 'SLA Verifikator') row.verifLogs++;
+    if (l.waktu_iso > cqsmsLastDate) cqsmsLastDate = l.waktu_iso;
+  }
+  const cqsmsTimeline = [...cqsmsMap.values()].sort((a, b) => a.bulan.localeCompare(b.bulan));
+
+  // 5. Mean vs Median vs P75 vs P90 Distribution per Bidang (Verifikator & Revisi)
+  const coreBidang = ['Keuangan', 'Legal', 'Teknik', 'BIM', 'CQSMS/QHSSE'];
+  const distributionByBidang = coreBidang.map((b) => {
+    const vDays = [];
+    const rDays = [];
+    const vAppr = [];
+    const vRej = [];
+    for (const l of lList) {
+      if (l.bidang !== b || l.sla_days === null || l.sla_days === undefined) continue;
+      if (l.kategori_aktor === 'SLA Verifikator') {
+        vDays.push(l.sla_days);
+        if (l.status === 1) vAppr.push(l.sla_days);
+        if (l.status === 2) vRej.push(l.sla_days);
+      } else if (l.kategori_aktor === 'SLA Rekanan') {
+        rDays.push(l.sla_days);
+      }
+    }
+    const vs = calcStatList(vDays);
+    const rs = calcStatList(rDays);
+    const vas = calcStatList(vAppr);
+    const vrs = calcStatList(vRej);
+    const under3Rate = vDays.length ? vDays.filter((d) => d <= 3).length / vDays.length : 0;
+    const revOver100Count = rDays.filter((d) => d > 100).length;
+    return {
+      bidang: b,
+      verifCount: vs.count,
+      verifMean: vs.avgDays,
+      verifMedian: vs.medianDays,
+      verifP90: vs.p90Days,
+      verifMax: vs.maxDays,
+      verifUnder3Rate: under3Rate,
+      apprMean: vas.avgDays,
+      apprMedian: vas.medianDays,
+      rejMean: vrs.avgDays,
+      rejMedian: vrs.medianDays,
+      revCount: rs.count,
+      revMean: rs.avgDays,
+      revMedian: rs.medianDays,
+      revP90: rs.p90Days,
+      revMax: rs.maxDays,
+      revOver100Count,
+    };
+  });
+
+  // 6. Internal Review Breakdown (1.476 logs averaging 11.6-15.1 days)
+  const intRevMap = new Map();
+  let totalInternalReview = 0;
+  for (const l of lList) {
+    if (l.kategori_aktor !== 'Internal Review') continue;
+    totalInternalReview++;
+    const key = `${l.tipe_activity}__${l.hasil_status}`;
+    if (!intRevMap.has(key)) {
+      intRevMap.set(key, { tipeActivity: l.tipe_activity, hasilStatus: l.hasil_status, bidang: l.bidang, days: [] });
+    }
+    if (l.sla_days !== null && l.sla_days !== undefined) intRevMap.get(key).days.push(l.sla_days);
+  }
+  const internalReviewBreakdown = [...intRevMap.values()]
+    .map((x) => {
+      const st = calcStatList(x.days);
+      return {
+        tipeActivity: x.tipeActivity,
+        hasilStatus: x.hasilStatus,
+        bidang: x.bidang,
+        count: x.days.length,
+        avgDays: st.avgDays,
+        medianDays: st.medianDays,
+        maxDays: st.maxDays,
+      };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // 7. Parallel Sum vs Wall-Clock Calendar Duration for Extreme Cases (matching Slide 3: Top Active + Top 5 Approved BU)
+  const buExtremePool = vList.filter((v) => v.tipe_rekanan === 'Badan Usaha' && v.total_logs >= 7);
+  const topActiveBu = [...buExtremePool]
+    .filter((v) => v.tindak_lanjut !== 'Lulus Terseleksi')
+    .sort((a, b) => b.dur_days - a.dur_days)
+    .slice(0, 1);
+  const topApprovedBu = [...buExtremePool]
+    .filter((v) => v.tindak_lanjut === 'Lulus Terseleksi' && v.first_act === 'Konfirmasi Selesai')
+    .sort((a, b) => b.dur_days - a.dur_days)
+    .slice(0, 5);
+  const extremeVendors = [...topActiveBu, ...topApprovedBu]
+    .sort((a, b) => b.dur_days - a.dur_days)
+    .map((v) => ({
+      idVendor: v.id_vendor,
+      namaPerusahaan: v.nama_perusahaan,
+      tindakLanjut: v.tindak_lanjut,
+      wallClockDays: v.dur_days,
+      parallelVerifDays: v.verif_sla_days,
+      parallelRekananDays: v.rekanan_sla_days,
+      parallelInternalDays: v.internal_sla_days,
+      parallelTotalDays: v.verif_sla_days + v.rekanan_sla_days + v.internal_sla_days,
+      overlapRatio:
+        v.dur_days > 0 ? (v.verif_sla_days + v.rekanan_sla_days + v.internal_sla_days) / v.dur_days : 1,
+      rejectCount: v.reject_count,
+      revisionCount: v.revision_count,
+    }));
+
+  // 8. Interactive Auto-Drop Policy Simulator (14, 30, 60, 90, 180 days)
+  const activeRevVendors = vList.filter((v) => v.tindak_lanjut === 'Revisi di Rekanan');
+  const allRevLogDays = lList
+    .filter((l) => l.kategori_aktor === 'SLA Rekanan' && l.sla_days !== null && l.sla_days !== undefined)
+    .map((l) => l.sla_days);
+  const baselineRevAvg = calcStatList(allRevLogDays).avgDays || 0;
+  const approvedCycles = vList.filter((v) => v.tindak_lanjut === 'Lulus Terseleksi').map((v) => v.dur_days);
+  const baselineApprovedCycleAvg = calcStatList(approvedCycles).avgDays || 0;
+
+  const autoDropScenarios = [14, 30, 60, 90, 180].map((capDays) => {
+    const droppedActiveVendors = activeRevVendors.filter((v) => v.aging_days > capDays).length;
+    const remainingActiveVendors = activeRevVendors.length - droppedActiveVendors;
+    const revWithinCap = allRevLogDays.filter((d) => d <= capDays);
+    const revOverCapCount = allRevLogDays.length - revWithinCap.length;
+    const projectedRevAvg = calcStatList(revWithinCap).avgDays || 0;
+    const cappedCycles = approvedCycles.map((d) => Math.min(d, capDays * 2));
+    return {
+      capDays,
+      totalActiveRev: activeRevVendors.length,
+      droppedActiveVendors,
+      droppedShare: activeRevVendors.length ? droppedActiveVendors / activeRevVendors.length : 0,
+      remainingActiveVendors,
+      revOverCapCount,
+      revOverCapShare: allRevLogDays.length ? revOverCapCount / allRevLogDays.length : 0,
+      baselineRevAvg,
+      projectedRevAvg,
+      revReductionDays: baselineRevAvg - projectedRevAvg,
+      baselineApprovedCycleAvg,
+      projectedCappedCycleAvg: calcStatList(cappedCycles).avgDays || 0,
+    };
+  });
+
+  // 9. Historical Spikes Attribution (Q3 2025 Keuangan, Q1 2026 Legal, Q2 2026 Revisi)
+  const spikeMonths = ['2025-08', '2026-01', '2026-03', '2026-05', '2026-06'];
+  const historicalSpikes = spikeMonths.map((bulan) => {
+    const mLogs = lList.filter((l) => l.periode_bulan === bulan && l.sla_days !== null);
+    const verifAll = mLogs.filter((l) => l.kategori_aktor === 'SLA Verifikator');
+    const rekAll = mLogs.filter((l) => l.kategori_aktor === 'SLA Rekanan');
+    const bidangVerifAvg = coreBidang
+      .map((b) => {
+        const arr = verifAll.filter((l) => l.bidang === b).map((l) => l.sla_days);
+        return { bidang: b, count: arr.length, avgDays: calcStatList(arr).avgDays };
+      })
+      .filter((x) => x.count > 0)
+      .sort((a, b) => (b.avgDays || 0) - (a.avgDays || 0));
+    return {
+      bulan,
+      verifAvg: calcStatList(verifAll.map((l) => l.sla_days)).avgDays,
+      rekAvg: calcStatList(rekAll.map((l) => l.sla_days)).avgDays,
+      topDriverBidang: bidangVerifAvg[0]?.bidang || '-',
+      topDriverAvg: bidangVerifAvg[0]?.avgDays || null,
+      topDriverCount: bidangVerifAvg[0]?.count || 0,
+    };
+  });
+
+  return {
+    curationWaterfall,
+    typeSplit,
+    mandorQueueBreakdown,
+    faReconciliation,
+    cqsmsSummary: {
+      totalLogs: cqsmsTimeline.reduce((s, x) => s + x.totalLogs, 0),
+      lastDate: cqsmsLastDate,
+      timeline: cqsmsTimeline,
+    },
+    distributionByBidang,
+    internalReviewSummary: {
+      totalLogs: totalInternalReview,
+      breakdown: internalReviewBreakdown,
+    },
+    extremeVendors,
+    autoDropScenarios,
+    historicalSpikes,
+  };
+}

@@ -6,6 +6,7 @@ import {
   BarChart3,
   GitFork,
   UserCheck,
+  ShieldAlert,
   Download,
   Moon,
   Sun,
@@ -17,7 +18,7 @@ import { api, getRuntimeMode, type GlobalFilters } from '@/lib/api';
 import { Button, FilterSelect } from '@/components/ui/primitives';
 import { cn } from '@/lib/utils';
 
-export type NavPage = 'overview' | 'leaderboard' | 'tracker' | 'analytics' | 'divisions' | 'verifiers';
+export type NavPage = 'overview' | 'leaderboard' | 'tracker' | 'analytics' | 'divisions' | 'fgd' | 'verifiers';
 
 const NAV_ITEMS: { id: NavPage; label: string; shortDesc: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'overview', label: 'Ringkasan Eksekutif', shortDesc: 'KPI, tren & bottleneck utama', icon: LayoutDashboard },
@@ -25,6 +26,7 @@ const NAV_ITEMS: { id: NavPage; label: string; shortDesc: string; icon: React.Co
   { id: 'tracker', label: 'Pelacak Rekanan & Log', shortDesc: 'Lacak siklus & jarak antar-log', icon: SearchCheck },
   { id: 'analytics', label: 'Analisa Bidang & Periode', shortDesc: 'Bulanan, triwulan & 3 periode', icon: BarChart3 },
   { id: 'divisions', label: 'Divisi, Revisi & Antrean', shortDesc: 'Performa divisi & aging queue', icon: GitFork },
+  { id: 'fgd', label: 'Antisipasi Q&A FGD', shortDesc: 'Bukti audit, median & auto-drop', icon: ShieldAlert },
   { id: 'verifiers', label: 'Verifikator & Data Lokal', shortDesc: 'SLA verifikator & impor Excel', icon: UserCheck },
 ];
 

@@ -8,6 +8,7 @@ import { LeaderboardPage } from '@/pages/LeaderboardPage';
 import { TrackerPage } from '@/pages/TrackerPage';
 import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { DivisionRevisionPage } from '@/pages/DivisionRevisionPage';
+import { FgdDefensePage } from '@/pages/FgdDefensePage';
 import { VerifierDataPage } from '@/pages/VerifierDataPage';
 
 export function App() {
@@ -108,6 +109,12 @@ export function App() {
             )}
             {activePage === 'divisions' && (
               <DivisionRevisionPage
+                filters={filters}
+                onSelectVendor={setSelectedVendorId}
+              />
+            )}
+            {activePage === 'fgd' && (
+              <FgdDefensePage
                 filters={filters}
                 onSelectVendor={setSelectedVendorId}
               />
