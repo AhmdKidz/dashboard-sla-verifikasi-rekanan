@@ -12,8 +12,10 @@ import {
   Legend,
   ReferenceLine,
 } from 'recharts';
+import { Calendar, ExternalLink, GitBranch, Microscope, Users } from 'lucide-react';
 import { api, type GlobalFilters } from '@/lib/api';
 import {
+  formatDaysSmart,
   formatDecimal,
   formatDeltaDays,
   formatMonthShort,
@@ -64,7 +66,13 @@ const STUDIO_TABS: { id: StudioMode; label: string }[] = [
   { id: 'Final Approval', label: 'Final Approval' },
 ];
 
-export function AnalyticsPage({ filters }: { filters: GlobalFilters }) {
+export function AnalyticsPage({
+  filters,
+  onSelectVendor,
+}: {
+  filters: GlobalFilters;
+  onSelectVendor?: (idVendor: number) => void;
+}) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -403,6 +411,234 @@ export function AnalyticsPage({ filters }: { filters: GlobalFilters }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Row 2b: Diagnostic Deep-Dive — Why Final Approval Slowed in Oct 2026+ */}
+      {data.finalApprovalDiagnostic && data.finalApprovalDiagnostic.afterStats?.count > 0 && (() => {
+        const fa = data.finalApprovalDiagnostic;
+        const octTopUser = fa.byApprover.find((a: any) => a.countAfter > 0);
+        const earlySlice = fa.subPeriods.find((p: any) => p.id === 'early');
+        const midSlice = fa.subPeriods.find((p: any) => p.id === 'mid');
+        const octSlice = fa.subPeriods.find((p: any) => p.id === 'oct');
+        const wk = fa.octBreakdown?.weekdayOnly;
+        const we = fa.octBreakdown?.crossWeekend;
+        const fromAppr = fa.octBreakdown?.fromApproveBidang;
+        const fromVer = fa.octBreakdown?.fromVerifikasi;
+        const octTotal = fa.afterStats.count || 0;
+
+        return (
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
+              <div className="flex items-start gap-2.5">
+                <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+                  <Microscope className="size-4" />
+                </div>
+                <div>
+                  <CardTitle>Bedah Penyebab SLA Final Approval (Sebelum vs Okt 2026+)</CardTitle>
+                  <CardDescription>
+                    Analisa faktor approver tunggal, pergeseran baseline Mei–Sep, efek akhir pekan &amp; perubahan alur sistem
+                  </CardDescription>
+                </div>
+              </div>
+              <Badge tone="rose">
+                {formatDecimal(fa.beforeStats?.avgDays, 2)} → {formatDecimal(fa.afterStats?.avgDays, 2)} hari
+              </Badge>
+            </CardHeader>
+
+            <CardContent className="space-y-4 pt-4">
+              {/* Dynamic Root-Cause Callout */}
+              <div className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-4 py-3 text-xs leading-relaxed text-slate-800 dark:border-amber-900/50 dark:bg-amber-950/25 dark:text-slate-200">
+                <strong>Temuan Utama:</strong> Kenaikan rata-rata Final Approval pada Okt 2026+ bukan disebabkan tim melambat
+                di Oktober, melainkan{' '}
+                <strong>pergantian approver sejak Mei/Juni 2026</strong>.{' '}
+                {octTopUser && (
+                  <>
+                    Seluruh antrean Okt 2026+ (
+                    <span className="font-mono-data font-semibold">
+                      {formatNumber(octTopUser.countAfter)}/{formatNumber(octTotal)}
+                    </span>
+                    ) ditangani oleh <strong>User {octTopUser.approverId}</strong> dengan rata-rata{' '}
+                    <span className="font-mono-data font-semibold">{formatDecimal(octTopUser.avgAfter, 2)} hari</span>
+                    {midSlice?.avgDays != null && octSlice?.avgDays != null && (
+                      <>
+                        {' '}— justru{' '}
+                        <strong>
+                          {octSlice.avgDays < midSlice.avgDays ? 'lebih cepat' : 'berubah'} dibanding periode Mei–Sep 2026
+                        </strong>{' '}
+                        (<span className="font-mono-data">{formatDecimal(midSlice.avgDays, 2)} hari</span>).
+                      </>
+                    )}
+                  </>
+                )}{' '}
+                {earlySlice?.avgDays != null && (
+                  <>
+                    Angka <em>Sebelum Okt 2026</em> terlihat sangat rendah karena periode Jan 2025–Apr 2026 (
+                    <span className="font-mono-data">{formatDecimal(earlySlice.avgDays, 2)} hari</span>,{' '}
+                    {formatNumber(earlySlice.count)} kasus) didominasi oleh User{' '}
+                    <span className="font-mono-data font-semibold">{earlySlice.dominantApprover}</span>.
+                  </>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+                {/* Left: Sub-periods + Approver Table */}
+                <div className="space-y-4 xl:col-span-7">
+                  {/* 3 Sub-Periods */}
+                  <div>
+                    <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      <Calendar className="size-3.5 text-slate-500" />
+                      <span>Evolusi 3 Sub-Periode Final Approval</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                      {fa.subPeriods.map((sp: any) => (
+                        <div
+                          key={sp.id}
+                          className="rounded-lg border border-slate-200/80 bg-slate-50/70 p-3 text-xs dark:border-slate-800 dark:bg-slate-800/40"
+                        >
+                          <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{sp.label}</div>
+                          <div className="font-mono-data mt-1 text-base font-bold text-slate-900 dark:text-white">
+                            {sp.avgDays != null ? `${formatDecimal(sp.avgDays, 2)} hari` : '—'}
+                          </div>
+                          <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                            <span>Med: {sp.medianDays != null ? formatDaysSmart(sp.medianDays) : '—'}</span>
+                            <span className="font-mono-data">{formatNumber(sp.count)} appr</span>
+                          </div>
+                          <div className="mt-1.5 truncate text-[11px] text-slate-600 dark:text-slate-300">
+                            Dominan: <strong className="font-mono-data">{sp.dominantApprover}</strong> (
+                            {formatPercent(sp.dominantShare, 0)})
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Per-Approver Table */}
+                  <div className="overflow-hidden rounded-lg border border-slate-200/80 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5 border-b border-slate-100 bg-slate-50/70 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-200">
+                      <Users className="size-3.5 text-slate-500" />
+                      <span>Kinerja Per Approver Final Approval (Message_by)</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-[11px] font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                            <th className="px-3.5 py-2">User Approver</th>
+                            <th className="px-3 py-2 text-right">Jml (Sblm Okt)</th>
+                            <th className="px-3 py-2 text-right">Avg (Sblm Okt)</th>
+                            <th className="px-3 py-2 text-right">Med (Sblm Okt)</th>
+                            <th className="px-3 py-2 text-right">Jml (Okt+)</th>
+                            <th className="px-3.5 py-2 text-right">Avg (Okt+)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {fa.byApprover.map((a: any) => (
+                            <tr key={a.approverId} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                              <td className="font-mono-data px-3.5 py-2 font-semibold text-slate-900 dark:text-slate-100">
+                                {a.approverId}
+                              </td>
+                              <td className="font-mono-data px-3 py-2 text-right">{formatNumber(a.countBefore)}</td>
+                              <td className="font-mono-data px-3 py-2 text-right">
+                                {a.avgBefore != null ? `${formatDecimal(a.avgBefore, 2)}h` : '—'}
+                              </td>
+                              <td className="font-mono-data px-3 py-2 text-right text-slate-500">
+                                {a.medianBefore != null ? formatDaysSmart(a.medianBefore) : '—'}
+                              </td>
+                              <td className="font-mono-data px-3 py-2 text-right font-semibold text-blue-700 dark:text-blue-400">
+                                {formatNumber(a.countAfter)}
+                              </td>
+                              <td className="font-mono-data px-3.5 py-2 text-right font-bold text-slate-900 dark:text-white">
+                                {a.avgAfter != null ? `${formatDecimal(a.avgAfter, 2)}h` : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Weekend & Workflow Impact + Top 5 Outliers */}
+                <div className="space-y-4 xl:col-span-5">
+                  {/* Weekend + Workflow Split */}
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    <div className="rounded-lg border border-slate-200/80 p-3 text-xs dark:border-slate-800">
+                      <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                        Efek Akhir Pekan (Okt+)
+                      </div>
+                      <div className="mt-2 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Hari Kerja ({wk?.count || 0})</span>
+                          <span className="font-mono-data font-bold text-teal-700 dark:text-teal-400">
+                            {wk?.avgDays != null ? `${formatDecimal(wk.avgDays, 2)}h` : '—'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Lewat Sab–Min ({we?.count || 0})</span>
+                          <span className="font-mono-data font-bold text-rose-600 dark:text-rose-400">
+                            {we?.avgDays != null ? `${formatDecimal(we.avgDays, 2)}h` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200/80 p-3 text-xs dark:border-slate-800">
+                      <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                        <GitBranch className="size-3" />
+                        <span>Alur Sebelum Final (Okt+)</span>
+                      </div>
+                      <div className="mt-2 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Dari Verifikasi ({fromVer?.count || 0})</span>
+                          <span className="font-mono-data font-bold text-blue-700 dark:text-blue-400">
+                            {fromVer?.avgDays != null ? `${formatDecimal(fromVer.avgDays, 2)}h` : '—'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Dari Approve VP ({fromAppr?.count || 0})</span>
+                          <span className="font-mono-data font-bold text-amber-700 dark:text-amber-400">
+                            {fromAppr?.avgDays != null ? `${formatDecimal(fromAppr.avgDays, 2)}h` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Top 5 Outliers in Oct+ */}
+                  <div className="overflow-hidden rounded-lg border border-slate-200/80 dark:border-slate-800">
+                    <div className="border-b border-slate-100 bg-slate-50/70 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-200">
+                      Top 5 Final Approval Terlama (Okt 2026+)
+                    </div>
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {(fa.topOutliersOct || []).map((o: any) => (
+                        <button
+                          key={`${o.idVendor}-${o.waktuDisplay}`}
+                          type="button"
+                          onClick={() => onSelectVendor?.(o.idVendor)}
+                          className="flex w-full items-center justify-between gap-2 px-3.5 py-2 text-left text-xs transition-colors hover:bg-slate-50 cursor-pointer dark:hover:bg-slate-800/50"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold text-slate-900 dark:text-slate-100">
+                              {o.namaPerusahaan}
+                            </div>
+                            <div className="truncate text-[11px] text-slate-500">
+                              {o.pairedPrevAct} → Final ({o.waktuDisplay})
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <Badge tone="rose" className="font-mono-data">
+                              {formatDecimal(o.slaDays, 2)}h
+                            </Badge>
+                            {onSelectVendor && <ExternalLink className="size-3 text-slate-400" />}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Row 3: Ringkasan Tipe Activity (Sheet 4) */}
       <Card className="overflow-hidden">

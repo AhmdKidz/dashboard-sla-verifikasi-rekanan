@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { parseRegistrationWorkbookObject } from '../../shared/slaParser.mjs';
+import { computeFinalApprovalDiagnostic, parseRegistrationWorkbookObject } from '../../shared/slaParser.mjs';
 import type { GlobalFilters, LogRow, VendorRow } from '@/lib/api';
 
 const IDB_NAME = 'sla-verifikasi-local-db';
@@ -964,6 +964,10 @@ export async function browserGetAnalytics(filters: GlobalFilters) {
       avgSlaReject: avg(a.rejDays),
     }));
 
+  const finalApprovalDiagnostic = computeFinalApprovalDiagnostic(
+    lList.filter((l) => l.bidang === 'Final Approval')
+  );
+
   return {
     period2Comparison,
     period3Summary,
@@ -971,6 +975,7 @@ export async function browserGetAnalytics(filters: GlobalFilters) {
     bidangQuarterly,
     statusMatrix,
     activitySummary,
+    finalApprovalDiagnostic,
   };
 }
 

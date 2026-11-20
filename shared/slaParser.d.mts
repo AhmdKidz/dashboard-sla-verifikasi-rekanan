@@ -27,3 +27,5 @@ export function parseRegistrationWorkbookObject(
   wb: XLSX.WorkBook,
   options?: ParseOptions
 ): ParsedWorkbookResult;
+
+export function computeFinalApprovalDiagnostic(faLogs: any[]): any;

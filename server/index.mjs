@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDb, getMeta, replaceDatabaseContents, DB_PATH } from './db.mjs';
 import { parseRegistrationWorkbook } from './parser.mjs';
+import { computeFinalApprovalDiagnostic } from '../shared/slaParser.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.resolve(__dirname, '..', 'uploads');
@@ -686,6 +687,18 @@ app.get('/api/analytics', (req, res) => {
     `)
     .all(...lf.params);
 
+  const faRows = db
+    .prepare(`
+      SELECT
+        id_vendor, nama_perusahaan, message_by, serial_date, waktu_display,
+        periode_bulan, kelompok_waktu, paired_prev_act, paired_prev_waktu, sla_hours, sla_days
+      FROM logs
+      WHERE bidang = 'Final Approval' ${lf.and}
+    `)
+    .all(...lf.params);
+
+  const finalApprovalDiagnostic = computeFinalApprovalDiagnostic(faRows);
+
   res.json({
     period2Comparison,
     period3Summary,
@@ -693,6 +706,7 @@ app.get('/api/analytics', (req, res) => {
     bidangQuarterly,
     statusMatrix,
     activitySummary,
+    finalApprovalDiagnostic,
   });
 });
 

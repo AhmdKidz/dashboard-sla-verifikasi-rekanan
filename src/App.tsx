@@ -103,7 +103,9 @@ export function App() {
                 onSelectVendor={setSelectedVendorId}
               />
             )}
-            {activePage === 'analytics' && <AnalyticsPage filters={filters} />}
+            {activePage === 'analytics' && (
+              <AnalyticsPage filters={filters} onSelectVendor={setSelectedVendorId} />
+            )}
             {activePage === 'divisions' && (
               <DivisionRevisionPage
                 filters={filters}

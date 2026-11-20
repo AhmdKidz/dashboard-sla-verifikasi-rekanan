@@ -462,3 +462,138 @@ export function parseRegistrationWorkbookObject(wb, options = {}) {
     logs: cleanLogs,
   };
 }
+
+function calcStatList(arr) {
+  if (!arr.length) return { count: 0, avgDays: null, medianDays: null, p90Days: null, maxDays: null };
+  const s = [...arr].sort((a, b) => a - b);
+  const sum = s.reduce((x, y) => x + y, 0);
+  const pct = (p) => s[Math.min(s.length - 1, Math.floor(p * (s.length - 1)))];
+  return {
+    count: s.length,
+    avgDays: sum / s.length,
+    medianDays: pct(0.5),
+    p90Days: pct(0.9),
+    maxDays: s[s.length - 1],
+  };
+}
+
+function intervalCrossesWeekend(endSerial, slaDays) {
+  if (slaDays === null || slaDays === undefined) return false;
+  const startDay = Math.floor(endSerial - slaDays);
+  const endDay = Math.floor(endSerial);
+  for (let d = startDay; d <= endDay; d++) {
+    const dow = new Date((d - 25569) * 86400 * 1000).getUTCDay();
+    if (dow === 0 || dow === 6) return true;
+  }
+  return false;
+}
+
+/**
+ * Compute deep-dive diagnostics explaining Final Approval SLA shifts
+ * (approver handover, sub-period breakdown, weekend impact, workflow shift, outliers).
+ */
+export function computeFinalApprovalDiagnostic(faLogs) {
+  const valid = (faLogs || []).filter((l) => l.sla_days !== null && l.sla_days !== undefined);
+  const beforeLogs = valid.filter((l) => l.kelompok_waktu === 'Sebelum Oktober 2026');
+  const afterLogs = valid.filter((l) => l.kelompok_waktu === 'Oktober 2026 - Sekarang');
+
+  // 1. Per-Approver comparison (Before Oct vs Oct+)
+  const approverMap = new Map();
+  for (const l of valid) {
+    const id = l.message_by || '(Kosong)';
+    if (!approverMap.has(id)) {
+      approverMap.set(id, { approverId: id, before: [], after: [] });
+    }
+    const bucket = approverMap.get(id);
+    if (l.kelompok_waktu === 'Sebelum Oktober 2026') bucket.before.push(l.sla_days);
+    else bucket.after.push(l.sla_days);
+  }
+  const byApprover = [...approverMap.values()]
+    .map((a) => {
+      const sb = calcStatList(a.before);
+      const sa = calcStatList(a.after);
+      return {
+        approverId: a.approverId,
+        countBefore: sb.count,
+        avgBefore: sb.avgDays,
+        medianBefore: sb.medianDays,
+        countAfter: sa.count,
+        avgAfter: sa.avgDays,
+        medianAfter: sa.medianDays,
+        totalCount: sb.count + sa.count,
+      };
+    })
+    .sort((a, b) => b.totalCount - a.totalCount);
+
+  // 2. 3 Sub-periods (showing exact May/Jun approver transition)
+  const subSlices = [
+    { id: 'early', label: 'Jan 2025 – Apr 2026', match: (m) => m < '2026-05' },
+    { id: 'mid', label: 'Mei 2026 – Sep 2026', match: (m) => m >= '2026-05' && m < '2026-10' },
+    { id: 'oct', label: 'Okt 2026 – Skrg', match: (m) => m >= '2026-10' },
+  ];
+  const subPeriods = subSlices.map((sl) => {
+    const rows = valid.filter((l) => sl.match(l.periode_bulan));
+    const st = calcStatList(rows.map((r) => r.sla_days));
+    const userCounts = new Map();
+    for (const r of rows) {
+      const u = r.message_by || '-';
+      userCounts.set(u, (userCounts.get(u) || 0) + 1);
+    }
+    const topUser = [...userCounts.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+    return {
+      id: sl.id,
+      label: sl.label,
+      ...st,
+      dominantApprover: topUser ? topUser[0] : '-',
+      dominantShare: topUser && rows.length ? topUser[1] / rows.length : 0,
+    };
+  });
+
+  // 3. Oct+ Breakdown: Weekend crossing & Preceding workflow stage
+  const weekdayDurs = [];
+  const weekendDurs = [];
+  const fromApproveDurs = [];
+  const fromVerifDurs = [];
+  const beforeApproveCount = beforeLogs.filter((l) => String(l.paired_prev_act || '').startsWith('Approve ')).length;
+  const beforeVerifCount = beforeLogs.filter((l) => String(l.paired_prev_act || '').startsWith('Verifikasi ')).length;
+
+  for (const l of afterLogs) {
+    if (intervalCrossesWeekend(l.serial_date, l.sla_days)) weekendDurs.push(l.sla_days);
+    else weekdayDurs.push(l.sla_days);
+
+    const prev = String(l.paired_prev_act || '');
+    if (prev.startsWith('Approve ')) fromApproveDurs.push(l.sla_days);
+    else if (prev.startsWith('Verifikasi ')) fromVerifDurs.push(l.sla_days);
+  }
+
+  // 4. Top 5 slowest Final Approval cases in Oct+
+  const topOutliersOct = [...afterLogs]
+    .sort((a, b) => b.sla_days - a.sla_days)
+    .slice(0, 5)
+    .map((l) => ({
+      idVendor: l.id_vendor,
+      namaPerusahaan: l.nama_perusahaan,
+      slaDays: l.sla_days,
+      slaHours: l.sla_hours,
+      waktuDisplay: l.waktu_display,
+      messageBy: l.message_by,
+      pairedPrevAct: l.paired_prev_act,
+      pairedPrevWaktu: l.paired_prev_waktu,
+    }));
+
+  return {
+    beforeStats: calcStatList(beforeLogs.map((l) => l.sla_days)),
+    afterStats: calcStatList(afterLogs.map((l) => l.sla_days)),
+    byApprover,
+    subPeriods,
+    octBreakdown: {
+      weekdayOnly: calcStatList(weekdayDurs),
+      crossWeekend: calcStatList(weekendDurs),
+      fromApproveBidang: calcStatList(fromApproveDurs),
+      fromVerifikasi: calcStatList(fromVerifDurs),
+      beforeApproveCount,
+      beforeVerifCount,
+    },
+    topOutliersOct,
+  };
+}
